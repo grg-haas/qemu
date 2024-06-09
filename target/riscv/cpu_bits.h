@@ -312,6 +312,9 @@
 #define CSR_MSTATEEN3       0x30F
 #define CSR_MSTATEEN3H      0x31F
 
+/* Supervisor domains extension registers */
+#define CSR_MTTP            0x3F0
+
 /* Common defines for all smstateen */
 #define SMSTATEEN_MAX_COUNT 4
 #define SMSTATEEN0_CS       (1ULL << 0)
