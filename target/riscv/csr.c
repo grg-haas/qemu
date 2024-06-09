@@ -435,6 +435,16 @@ static RISCVException sstateen(CPURISCVState *env, int csrno)
     return RISCV_EXCP_NONE;
 }
 
+static RISCVException mttp(CPURISCVState *env, int csrno)
+{
+    // Todo: this may not be fully right yet (M-mode accesses only?)
+    if(!riscv_cpu_cfg(env)->ext_smsdid) {
+        return RISCV_EXCP_ILLEGAL_INST;
+    }
+
+    return RISCV_EXCP_NONE;
+}
+
 static RISCVException sstc(CPURISCVState *env, int csrno)
 {
     bool hmode_check = false;
@@ -2680,6 +2690,18 @@ static RISCVException write_sstateen_1_3(CPURISCVState *env, int csrno,
                                       target_ulong new_val)
 {
     return write_sstateen(env, csrno, SMSTATEEN_STATEEN, new_val);
+}
+
+static RISCVException read_mttp(CPURISCVState *env, int csrno, target_ulong *val)
+{
+    *val = env->mttp;
+    return RISCV_EXCP_NONE;
+}
+
+static RISCVException write_mttp(CPURISCVState *env, int csrno, target_ulong new_val)
+{
+    env->mttp = new_val;
+    return RISCV_EXCP_NONE;
 }
 
 static RISCVException rmw_mip64(CPURISCVState *env, int csrno,
@@ -5069,6 +5091,9 @@ riscv_csr_operations csr_ops[CSR_TABLE_SIZE] = {
     [CSR_SSTATEEN3] = { "sstateen3", sstateen, read_sstateen,
                         write_sstateen_1_3,
                         .min_priv_ver = PRIV_VERSION_1_12_0 },
+
+    /* Supervisor domain extensions */
+    [CSR_MTTP] = { "mttp", mttp, read_mttp, write_mttp, .min_priv_ver = PRIV_VERSION_1_12_0},
 
     /* Supervisor Trap Setup */
     [CSR_SSTATUS]    = { "sstatus",    smode, read_sstatus,    write_sstatus,
