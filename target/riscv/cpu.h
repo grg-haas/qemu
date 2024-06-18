@@ -113,6 +113,7 @@ enum {
     TRANSLATE_SUCCESS,
     TRANSLATE_FAIL,
     TRANSLATE_PMP_FAIL,
+    TRANSLATE_SMMTT_FAIL,
     TRANSLATE_G_STAGE_FAIL
 };
 
@@ -153,6 +154,7 @@ extern RISCVCPUImpliedExtsRule *riscv_multi_ext_implied_rules[];
 
 #if !defined(CONFIG_USER_ONLY)
 #include "pmp.h"
+#include "smmtt.h"
 #include "debug.h"
 #endif
 
