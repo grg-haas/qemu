@@ -10,96 +10,20 @@
  * Definitions
  */
 
-// MTT table masks
-#define MTTL3_MASK    _ULL(0x7FE00000000000)
-
-#define MTTL2_RW_MASK _ULL(0x001FFFFE000000)
-#define MTTL1_RW_MASK _ULL(0x00000001FF0000)
-#define MTTL0_RW_MASK _ULL(0x0000000000F000)
-
-#define MTTL2_MASK    _ULL(0x001FFFFC000000)
-#define MTTL1_MASK    _ULL(0x00000003FE0000)
-#define MTTL0_MASK    _ULL(0x0000000001F000)
-
 static const unsigned long long masks_rw[] = {
-        MTTL3_MASK, MTTL2_RW_MASK, MTTL1_RW_MASK, MTTL0_RW_MASK
+        MTTL3, MTTL2_RW, MTTL1_RW, MTTL0_RW
 };
 
 static const unsigned long long masks[] = {
-        MTTL3_MASK, MTTL2_MASK, MTTL1_MASK, MTTL0_MASK
+        MTTL3, MTTL2, MTTL1, MTTL0
 };
-
-// MTT table shifts
-#define MTTL3_SHIFT     (46)
-
-#define MTTL2_RW_SHIFT  (25)
-#define MTTL1_RW_SHIFT  (16)
-
-#define MTTL2_SHIFT     (26)
-#define MTTL1_SHIFT     (17)
-
-static const unsigned int shifts_rw[] = {
-        MTTL3_SHIFT, MTTL2_RW_SHIFT, MTTL1_RW_SHIFT, 0
-};
-
-static const unsigned int shifts[] = {
-        MTTL3_SHIFT, MTTL2_SHIFT, MTTL1_SHIFT, 0
-};
-
-#define MTTL2_2M_PAGES_SHIFT    (21) /* 2 megabytes */
-#define MTTL2_RW_PAGES_MASK     (0b11)
-#define MTTL2_PAGES_MASK        (0b1)
-
-// MTT table restriction types
-typedef enum {
-    SMMTT_TYPE_DISALLOW_1G = 0b00,
-    SMMTT_TYPE_ALLOW_1G   = 0b01,
-    SMMTT_TYPE_MTT_L1_DIR  = 0b10,
-    SMMTT_TYPE_2M_PAGES    = 0b11
-} smmtt_type;
-
-typedef enum {
-    SMMTT_TYPE_RW_DISALLOW_1G = 0b0000,
-    SMMTT_TYPE_RW_ALLOW_R_1G  = 0b0001,
-    SMMTT_TYPE_RW_ALLOW_RW_1g = 0b0011,
-    SMMTT_TYPE_RW_MTT_L1_DIR  = 0b0100,
-    SMMTT_TYPE_RW_2M_PAGES    = 0b0111
-} smmtt_type_rw;
-
-// MTT Table decoding
-typedef struct {
-    uint64_t mttl2_ppn : 44;
-    uint64_t zero : 20;
-} smmtt_mttl3_t;
-
-typedef struct {
-    uint64_t info : 44;
-    uint64_t type : 4;
-    uint64_t zero : 16;
-} smmtt_mttl2_rw_t;
-
-typedef struct {
-    uint64_t info : 44;
-    uint64_t type : 2;
-    uint64_t zero : 18;
-} smmtt_mttl2_t;
-
-typedef uint64_t smmtt_mttl1;
-
-typedef union {
-    uint64_t raw;
-    smmtt_mttl3_t mttl3;
-    smmtt_mttl2_rw_t mttl2_rw;
-    smmtt_mttl2_t mttl2;
-    smmtt_mttl1 mttl1;
-} smmtt_mtt_entry;
 
 /*
  * Internal helpers
  */
 
 static int smmtt_decode_mttp(CPURISCVState *env, bool *rw, int *levels) {
-    smmtt_mode_t smmtt_mode = get_field(env->mttp, MTTP_MODE_MASK);
+    smmtt_mode_t smmtt_mode = get_field(env->mttp, MTTP_MODE);
 
     switch(smmtt_mode) {
         case SMMTT_BARE:
@@ -123,7 +47,7 @@ static int smmtt_decode_mttp(CPURISCVState *env, bool *rw, int *levels) {
             *levels = 2;
             break;
 
-            // Handle 56 bit lookups (3 stage)
+        // Handle 56 bit lookups (3 stage)
 #if defined(TARGET_RISCV64)
         case SMMTT_56_rw:
             *rw = true;
@@ -139,49 +63,49 @@ static int smmtt_decode_mttp(CPURISCVState *env, bool *rw, int *levels) {
     return 0;
 }
 
-static int smmtt_decode_mttl2(hwaddr addr, bool rw, smmtt_mtt_entry entry,
+static int smmtt_decode_mttl2(hwaddr addr, bool rw, smmtt_mtt_entry_t entry,
                               int *privs, hwaddr *next, bool *done) {
-    smmtt_type type;
-    smmtt_type_rw type_rw;
+    smmtt_type_t type;
+    smmtt_type_rw_t type_rw;
     target_ulong idx;
 
     *done = false;
     if(rw) {
-        if(entry.mttl2_rw.zero != 0) {
+        if(entry.mttl2.mttl2_rw.zero != 0) {
             *done = true;
             return 0;
         }
 
-        type_rw = (smmtt_type_rw) entry.mttl2_rw.type;
+        type_rw = (smmtt_type_rw_t) entry.mttl2.mttl2_rw.type;
         switch(type_rw) {
-            case SMMTT_TYPE_RW_DISALLOW_1G:
+            case SMMTT_TYPE_RW_1G_DISALLOW:
                 *privs = 0;
                 *done = true;
                 break;
 
-            case SMMTT_TYPE_RW_ALLOW_RW_1g:
+            case SMMTT_TYPE_RW_1G_ALLOW_RW:
                 *privs |= PAGE_WRITE;
                 // fall through
-            case SMMTT_TYPE_RW_ALLOW_R_1G:
+            case SMMTT_TYPE_RW_1G_ALLOW_R:
                 *privs |= PAGE_READ;
                 *done = true;
                 break;
 
             case SMMTT_TYPE_RW_2M_PAGES:
-                if(entry.mttl2_rw.info >> 32 != 0) {
+                if(entry.mttl2.mttl2_rw.info >> 32 != 0) {
                     return -1;
                 }
 
-                idx = (addr & MTTL2_RW_MASK) >> MTTL2_2M_PAGES_SHIFT;
-                switch(get_field(entry.mttl2_rw.info, MTTL2_RW_PAGES_MASK << idx)) {
-                    case 0b00:
+                idx = (addr & MTTL2_RW) >> MTTL2_2M_PAGES_SHIFT;
+                switch(get_field(entry.mttl2.mttl2_rw.info, MTTL2_RW_PAGES << (MTTL2_RW_PAGES_BITS * idx))) {
+                    case SMMTT_2M_PAGES_TYPE_RW_DISALLOWED:
                         *privs = 0;
                         break;
 
-                    case 0b11:
+                    case SMMTT_2M_PAGES_TYPE_RW_READ_WRITE:
                         *privs |= PAGE_WRITE;
                         // fall through
-                    case 0b01:
+                    case SMMTT_2M_PAGES_TYPE_RW_READ:
                         *privs |= PAGE_READ;
                         break;
 
@@ -193,7 +117,7 @@ static int smmtt_decode_mttl2(hwaddr addr, bool rw, smmtt_mtt_entry entry,
                 break;
 
             case SMMTT_TYPE_RW_MTT_L1_DIR:
-                *next = entry.mttl2_rw.info << PGSHIFT;
+                *next = entry.mttl2.mttl2_rw.info << PGSHIFT;
                 *done = false;
                 break;
 
@@ -201,33 +125,33 @@ static int smmtt_decode_mttl2(hwaddr addr, bool rw, smmtt_mtt_entry entry,
                 return -1;
         }
     } else {
-        if(entry.mttl2.zero != 0) {
+        if(entry.mttl2.mttl2.zero != 0) {
             return false;
         }
 
-        type = (smmtt_type) entry.mttl2.type;
+        type = (smmtt_type_t) entry.mttl2.mttl2.type;
         switch(type) {
-            case SMMTT_TYPE_DISALLOW_1G:
+            case SMMTT_TYPE_1G_DISALLOW:
                 *privs = 0;
                 *done = true;
                 break;
-            case SMMTT_TYPE_ALLOW_1G:
+            case SMMTT_TYPE_1G_ALLOW:
                 *privs = (PAGE_READ | PAGE_WRITE | PAGE_EXEC);
                 *done = true;
                 break;
 
             case SMMTT_TYPE_2M_PAGES:
-                if(entry.mttl2.info >> 32 != 0) {
+                if(entry.mttl2.mttl2.info >> 32 != 0) {
                     return -1;
                 }
 
-                idx = (addr & MTTL2_MASK) >> MTTL2_2M_PAGES_SHIFT;
-                switch(get_field(entry.mttl2.info, MTTL2_PAGES_MASK << idx)) {
-                    case 0b0:
+                idx = (addr & MTTL2) >> MTTL2_2M_PAGES_SHIFT;
+                switch(get_field(entry.mttl2.mttl2.info, MTTL2_PAGES << (MTTL2_PAGES_BITS * idx))) {
+                    case SMMTT_2M_PAGES_TYPE_DISALLOWED:
                         *privs = 0;
                         break;
 
-                    case 0b1:
+                    case SMMTT_2M_PAGES_TYPE_ALLOWED:
                         *privs = (PAGE_READ | PAGE_WRITE | PAGE_EXEC);
                         break;
 
@@ -239,7 +163,7 @@ static int smmtt_decode_mttl2(hwaddr addr, bool rw, smmtt_mtt_entry entry,
                 break;
 
             case SMMTT_TYPE_MTT_L1_DIR:
-                *next = entry.mttl2.info << PGSHIFT;
+                *next = entry.mttl2.mttl2.info << PGSHIFT;
                 *done = false;
                 break;
         }
@@ -259,11 +183,10 @@ bool smmtt_hart_has_privs(CPURISCVState *env, hwaddr addr,
     // SMMTT configuration
     bool rw = false;
     int levels = 0;
-    smmtt_mtt_entry entry = {
+    smmtt_mtt_entry_t entry = {
             .raw = 0,
     };
 
-    const unsigned int *sh;
     const unsigned long long *msk;
 
     // Results and indices
@@ -293,12 +216,11 @@ bool smmtt_hart_has_privs(CPURISCVState *env, hwaddr addr,
         *allowed_privs = 0;
     }
 
-    sh = rw ? shifts_rw : shifts;
     msk = rw ? masks_rw : masks;
-    curr = (hwaddr) get_field(env->mttp, MTTP_PPN_MASK) << PGSHIFT;
+    curr = (hwaddr) get_field(env->mttp, MTTP_PPN) << PGSHIFT;
 
     for(; levels >= 0 && !done; levels--) {
-        idx = (addr >> sh[levels]) & msk[levels];
+        idx = get_field(addr, msk[levels]);
         if(levels != 0) {
             // Fetch an entry
             curr = curr + idx * 8;
