@@ -2709,17 +2709,17 @@ static RISCVException read_mttp(CPURISCVState *env, int csrno, target_ulong *val
 static RISCVException write_mttp(CPURISCVState *env, int csrno,
                                  target_ulong new_val)
 {
-    smmtt_mode_t mode = get_field(new_val, MTTP_MODE_MASK);
+    smmtt_mode_t mode = get_field(new_val, MTTP_MODE);
 
 #if defined(TARGET_RISCV64)
-    hwaddr ppn = get_field(new_val, MTTP_PPN_MASK);
+    hwaddr ppn = get_field(new_val, MTTP_PPN);
 #endif
 
     switch (mode) {
         // If the mode is BARE, the remaining fields (SDID, MTTPPN) in mttp
         // must be set to zeros, else generate a fault.
         case SMMTT_BARE:
-            if ((mode & ~MTTP_MODE_MASK) != 0) {
+            if ((mode & ~MTTP_MODE) != 0) {
                 return RISCV_EXCP_ILLEGAL_INST;
             }
             break;
@@ -2746,14 +2746,14 @@ static RISCVException write_mttp(CPURISCVState *env, int csrno,
                 return RISCV_EXCP_ILLEGAL_INST;
             }
             break;
+#endif
 
         default:
             // A write to mttp with an unsupported MODE value is not ignored.
             // Instead, the fields of mttp are WARL in the normal way.
-            new_val = set_field(new_val, MTTP_MODE_MASK,
-                                get_field(env->mttp, MTTP_MODE_MASK));
+            new_val = set_field(new_val, MTTP_MODE,
+                                get_field(env->mttp, MTTP_MODE));
             break;
-#endif
     }
 
     // All good, write value
