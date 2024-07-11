@@ -1060,6 +1060,7 @@ static void create_fdt(RISCVVirtState *s, const MemMapEntry *memmap)
 {
     MachineState *ms = MACHINE(s);
     uint8_t rng_seed[32];
+    uint64_t addr, size;
     g_autofree char *name = NULL;
 
     ms->fdt = create_device_tree(&s->fdt_size);
@@ -1096,6 +1097,17 @@ static void create_fdt(RISCVVirtState *s, const MemMapEntry *memmap)
     create_fdt_flash(s, memmap);
     create_fdt_fw_cfg(s, memmap);
     create_fdt_pmu(s);
+
+    /* Create reserved memory for SMMTT */
+    if(strcmp(ms->cpu_type, TYPE_RISCV_CPU_SMMTT) == 0) {
+        addr = memmap[VIRT_DRAM].base + ms->ram_size - 64 * MiB;
+        size = 64 * MiB;
+
+        qemu_fdt_add_subnode(ms->fdt, "/reserved-memory");
+        qemu_fdt_add_subnode(ms->fdt, "/reserved-memory/smmtt-tables");
+        qemu_fdt_setprop_cells(ms->fdt, "/reserved-memory/smmtt-tables", "reg",
+                               addr >> 32, addr, size);
+    }
 }
 
 static inline DeviceState *gpex_pcie_init(MemoryRegion *sys_mem,
