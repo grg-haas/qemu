@@ -11,11 +11,11 @@
  */
 
 static const unsigned long long masks_rw[] = {
-        MTTL3, MTTL2_RW, MTTL1_RW, MTTL0_RW
+    MTTL1_RW_OFFS, MTTL1_RW, MTTL2_RW, MTTL3
 };
 
 static const unsigned long long masks[] = {
-        MTTL3, MTTL2, MTTL1, MTTL0
+    MTTL1_OFFS, MTTL1, MTTL2, MTTL3,
 };
 
 /*
@@ -97,15 +97,15 @@ static int smmtt_decode_mttl2(hwaddr addr, bool rw, smmtt_mtt_entry_t entry,
                 }
 
                 idx = (addr & MTTL2_RW) >> MTTL2_2M_PAGES_SHIFT;
-                switch(get_field(entry.mttl2.mttl2_rw.info, MTTL2_RW_PAGES << (MTTL2_RW_PAGES_BITS * idx))) {
-                    case SMMTT_2M_PAGES_TYPE_RW_DISALLOWED:
+                switch(get_field(entry.mttl2.mttl2_rw.info, MTTL2_RW_2M_PAGES << (MTTL2_RW_2M_PAGES_BITS * idx))) {
+                    case SMMTT_2M_PAGES_RW_DISALLOWED:
                         *privs = 0;
                         break;
 
-                    case SMMTT_2M_PAGES_TYPE_RW_READ_WRITE:
+                    case SMMTT_2M_PAGES_RW_READ_WRITE:
                         *privs |= PAGE_WRITE;
                         // fall through
-                    case SMMTT_2M_PAGES_TYPE_RW_READ:
+                    case SMMTT_2M_PAGES_RW_READ:
                         *privs |= PAGE_READ;
                         break;
 
@@ -146,12 +146,12 @@ static int smmtt_decode_mttl2(hwaddr addr, bool rw, smmtt_mtt_entry_t entry,
                 }
 
                 idx = (addr & MTTL2) >> MTTL2_2M_PAGES_SHIFT;
-                switch(get_field(entry.mttl2.mttl2.info, MTTL2_PAGES << (MTTL2_PAGES_BITS * idx))) {
-                    case SMMTT_2M_PAGES_TYPE_DISALLOWED:
+                switch(get_field(entry.mttl2.mttl2.info, MTTL2_2M_PAGES << (MTTL2_2M_PAGES_BITS * idx))) {
+                    case SMMTT_2M_PAGES_DISALLOWED:
                         *privs = 0;
                         break;
 
-                    case SMMTT_2M_PAGES_TYPE_ALLOWED:
+                    case SMMTT_2M_PAGES_ALLOWED:
                         *privs = (PAGE_READ | PAGE_WRITE | PAGE_EXEC);
                         break;
 
@@ -252,14 +252,14 @@ bool smmtt_hart_has_privs(CPURISCVState *env, hwaddr addr,
             case 0:
                 if(rw) {
                     switch(get_field(entry.mttl1, 0b1111 << idx)) {
-                        case 0b0000:
+                        case SMMTT_MTT_L1_DIR_RW_DISALLOWED:
                             *allowed_privs = 0;
                             break;
 
-                        case 0b0011:
+                        case SMMTT_MTT_L1_DIR_RW_READ_WRITE:
                             *allowed_privs |= (PROT_WRITE);
                             // fall through
-                        case 0b0001:
+                        case SMMTT_MTT_L1_DIR_RW_READ:
                             *allowed_privs |= (PROT_READ);
                             break;
 
@@ -268,11 +268,11 @@ bool smmtt_hart_has_privs(CPURISCVState *env, hwaddr addr,
                     }
                 } else {
                     switch(get_field(entry.mttl1, 0b11 << idx)) {
-                        case 0b00:
+                        case SMMTT_MTT_L1_DIR_DISALLOWED:
                             *allowed_privs = 0;
                             break;
 
-                        case 0b11:
+                        case SMMTT_MTT_L1_DIR_ALLOWED:
                             *allowed_privs = (PROT_READ | PROT_WRITE | PROT_EXEC);
                             break;
 
