@@ -1104,9 +1104,14 @@ static void create_fdt(RISCVVirtState *s, const MemMapEntry *memmap)
         size = 64 * MiB;
 
         qemu_fdt_add_subnode(ms->fdt, "/reserved-memory");
-        qemu_fdt_add_subnode(ms->fdt, "/reserved-memory/smmtt-tables");
-        qemu_fdt_setprop_cells(ms->fdt, "/reserved-memory/smmtt-tables", "reg",
-                               addr >> 32, addr, size);
+        qemu_fdt_setprop_cells(ms->fdt, "/reserved-memory", "#address-cells", 0x2);
+        qemu_fdt_setprop_cells(ms->fdt, "/reserved-memory", "#size-cells", 0x2);
+        qemu_fdt_setprop(ms->fdt, "/reserved-memory", "ranges", NULL, 0);
+
+        name = g_strdup_printf("/reserved-memory/smmtt-tables@%lx", addr);
+        qemu_fdt_add_subnode(ms->fdt, name);
+        qemu_fdt_setprop_cells(ms->fdt, name, "reg", addr >> 32, addr, size >> 32, size);
+        qemu_fdt_setprop(ms->fdt, name, "no-map", NULL, 0);
     }
 }
 
