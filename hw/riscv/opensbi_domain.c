@@ -70,7 +70,7 @@ struct DomainFDTState {
 static void create_fdt_one_domain(MachineState *ms, OpenSBIDomainState *s)
 {
     DeviceState *ds = DEVICE(s);
-    g_autofree char *path, *cpu_name;
+    g_autofree char *path;
 
     if (ds->id) {
         path = g_strdup_printf("/chosen/opensbi-domains/%s",
@@ -89,9 +89,8 @@ static void create_fdt_one_domain(MachineState *ms, OpenSBIDomainState *s)
     create_fdt_domain_possible_harts(ms, s, path);
     create_fdt_domain_regions(ms, s, path);
 
-    /* Assign boot hart to this domain */
     if (s->boot_hart != -1) {
-        cpu_name = g_strdup_printf("/cpus/cpu@%i", s->boot_hart);
+        g_autofree char *cpu_name = g_strdup_printf("/cpus/cpu@%i", s->boot_hart);
         qemu_fdt_setprop_cell(ms->fdt, path, "boot-hart",
                               qemu_fdt_get_phandle(ms->fdt, cpu_name));
         if (s->assign) {
