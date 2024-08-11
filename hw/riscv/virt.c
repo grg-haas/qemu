@@ -63,6 +63,8 @@
 #include "hw/acpi/generic_event_device.h"
 #include "hw/riscv/riscv_ras_agent.h"
 
+#include <libfdt.h>
+
 /* KVM AIA only supports APLIC MSI. APLIC Wired is always emulated by QEMU. */
 static bool virt_use_kvm_aia(RISCVVirtState *s)
 {
@@ -1416,6 +1418,19 @@ static void finalize_fdt(RISCVVirtState *s)
     create_fdt_reri_harts(s, virt_memmap);
 
     create_fdt_opensbi_domains(MACHINE(ms));
+
+    /* MPXY between */
+
+    if(strcmp(ms->cpu_type, TYPE_RISCV_CPU_SMMTT) == 0 &&
+        fdt_get_phandle(ms->fdt, fdt_path_offset(ms->fdt, "/chosen/opensbi-domains/domain"))) {
+      const char *path = "/soc/sbi-mpxy-fdt";
+      qemu_fdt_add_subnode(ms->fdt, path);
+      qemu_fdt_setprop_string(ms->fdt, path, "compatible", "riscv,sbi-mpxy-fdt");
+      qemu_fdt_setprop_cell(ms->fdt, path, "riscv,sbi-mpxy-channel-id", 0x1001);
+      qemu_fdt_setprop_cell(ms->fdt, path, "tdomain-instance",
+                       qemu_fdt_get_phandle(ms->fdt, "/chosen/opensbi-domains/domain"));
+      qemu_fdt_setprop_string(ms->fdt, path, "bootargs", "secondary");
+    }
 }
 
 static void create_fdt(RISCVVirtState *s, const MemMapEntry *memmap)

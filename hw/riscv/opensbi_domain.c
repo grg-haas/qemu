@@ -121,6 +121,10 @@ static void create_fdt_one_domain(MachineState *ms, OpenSBIDomainState *s)
     if (s->system_suspend_allowed) {
         qemu_fdt_setprop(ms->fdt, path, "system-suspend-allowed", NULL, 0);
     }
+
+    if (s->smmtt_mode != -1) {
+        qemu_fdt_setprop_cell(ms->fdt, path, "smmtt-mode", s->smmtt_mode);
+    }
 }
 
 static uint32_t create_fdt_one_device(MachineState *ms, char *device)
@@ -466,6 +470,12 @@ static void opensbi_domain_instance_init(Object *obj)
                              set_suspend_allowed);
     object_property_set_description(obj, "system-suspend-allowed",
                                     "Whether the domain instance is allowed to do system suspend.");
+
+    s->smmtt_mode = -1;
+    object_property_add_uint32_ptr(obj, "smmtt-mode", &s->smmtt_mode,
+                                   OBJ_PROP_FLAG_WRITE);
+    object_property_set_description(obj, "smmtt-mode",
+                                    "The SMMTT mode to apply to the domain.");
 
     for (i = 0; i < OPENSBI_DOMAIN_MEMREGIONS_MAX; i++) {
         s->regions[i] = NULL;

@@ -42,6 +42,7 @@ struct OpenSBIDomainState {
     uint32_t next_mode;
     bool system_reset_allowed;
     bool system_suspend_allowed;
+    uint32_t smmtt_mode;
 
     bool assign;
 };
