@@ -147,6 +147,36 @@ static uint32_t create_fdt_one_device(MachineState *ms, char *device)
     return phandle;
 }
 
+static void reserve_fdt_one_memregion(MachineState *ms,
+                                      OpenSBIMemregionState *s)
+{
+    DeviceState *ds = DEVICE(s);
+    uint64_t size = 0;
+
+    g_autofree char *name;
+
+    if (fdt_path_offset(ms->fdt, "/reserved-memory") < 0) {
+        qemu_fdt_add_subnode(ms->fdt, "/reserved-memory");
+        qemu_fdt_setprop_cells(ms->fdt, "/reserved-memory", "#address-cells", 0x2);
+        qemu_fdt_setprop_cells(ms->fdt, "/reserved-memory", "#size-cells", 0x2);
+        qemu_fdt_setprop(ms->fdt, "/reserved-memory", "ranges", NULL, 0);
+    }
+
+    name = g_strdup_printf("/reserved-memory/%s@%lx", ds->id, s->base);
+    qemu_fdt_add_subnode(ms->fdt, name);
+
+    if (s->order != -1) {
+        size = 1 << s->order;
+    }
+
+    if (s->size != -1) {
+        size = s->size;
+    }
+
+    qemu_fdt_setprop_cells(ms->fdt, name, "reg", s->base >> 32, s->base, size >> 32, size);
+    qemu_fdt_setprop(ms->fdt, name, "no-map", NULL, 0);
+}
+
 static void create_fdt_one_memregion(MachineState *ms,
                                      OpenSBIMemregionState *s)
 {
@@ -200,6 +230,10 @@ static void create_fdt_one_memregion(MachineState *ms,
 
     qemu_fdt_setprop_cells(ms->fdt, path, "phandle",
                            qemu_fdt_alloc_phandle(ms->fdt));
+
+    if (s->reserve) {
+        reserve_fdt_one_memregion(ms, s);
+    }
 }
 
 static int create_fdt_domains(Object *obj, void *opaque)
@@ -281,6 +315,12 @@ static void set_device(Object *obj, const char *val, Error **err)
     }
 }
 
+static void set_reserve(Object *obj, bool val, Error **err)
+{
+    OpenSBIMemregionState *s = OPENSBI_MEMREGION(obj);
+    s->reserve = val;
+}
+
 static void opensbi_memregion_instance_init(Object *obj)
 {
     int i;
@@ -321,6 +361,11 @@ static void opensbi_memregion_instance_init(Object *obj)
                 i, OPENSBI_DOMAIN_MEMREGIONS_MAX);
         object_property_set_description(obj, propname, description);
     }
+
+    s->reserve = false;
+    object_property_add_bool(obj, "reserve", NULL, set_reserve);
+    object_property_set_description(obj, "reserve",
+                                    "Whether to reserve this memregion's ranges in the device tree.");
 }
 
 static void opensbi_memregion_realize(DeviceState *ds, Error **errp)

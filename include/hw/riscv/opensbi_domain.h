@@ -21,6 +21,8 @@ struct OpenSBIMemregionState {
     uint64_t size;
     bool mmio;
     char *devices[OPENSBI_MEMREGION_DEVICES_MAX];
+
+    bool reserve;
 };
 
 #define TYPE_OPENSBI_DOMAIN "opensbi-domain"
