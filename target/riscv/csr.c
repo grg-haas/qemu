@@ -2728,12 +2728,10 @@ static RISCVException write_mttp(CPURISCVState *env, int csrno,
         // MTTL2 must be page-aligned, but this is always true since MTTP
         // holds a PPN and not a physical address.
         case SMMTT_34:
-        case SMMTT_34_rw:
             break;
 #elif defined(TARGET_RISCV64)
         // MTTL2 must be 16M aligned
         case SMMTT_46:
-        case SMMTT_46_rw:
             if ((ppn & 0b111111111111) != 0) {
                 return RISCV_EXCP_ILLEGAL_INST;
             }
@@ -2741,7 +2739,6 @@ static RISCVException write_mttp(CPURISCVState *env, int csrno,
 
         // MTTL3 must be 8kb aligned
         case SMMTT_56:
-        case SMMTT_56_rw:
             if ((ppn & 0b1) != 0) {
                 return RISCV_EXCP_ILLEGAL_INST;
             }
