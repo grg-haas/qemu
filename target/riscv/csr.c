@@ -29,6 +29,7 @@
 #include "sysemu/cpu-timers.h"
 #include "qemu/guest-random.h"
 #include "qapi/error.h"
+#include "smmtt.h"
 
 /* CSR function table public API */
 void riscv_get_csr_ops(int csrno, riscv_csr_operations *ops)
@@ -430,6 +431,23 @@ static RISCVException sstateen(CPURISCVState *env, int csrno)
                 return RISCV_EXCP_VIRT_INSTRUCTION_FAULT;
             }
         }
+    }
+
+    return RISCV_EXCP_NONE;
+}
+
+static RISCVException mttp(CPURISCVState *env, int csrno)
+{
+    if(!riscv_cpu_cfg(env)->ext_smsdid) {
+        return RISCV_EXCP_ILLEGAL_INST;
+    }
+
+    if(env->debugger) {
+        return RISCV_EXCP_NONE;
+    }
+
+    if(env->priv < PRV_M) {
+        return RISCV_EXCP_ILLEGAL_INST;
     }
 
     return RISCV_EXCP_NONE;
@@ -2680,6 +2698,64 @@ static RISCVException write_sstateen_1_3(CPURISCVState *env, int csrno,
                                       target_ulong new_val)
 {
     return write_sstateen(env, csrno, SMSTATEEN_STATEEN, new_val);
+}
+
+static RISCVException read_mttp(CPURISCVState *env, int csrno, target_ulong *val)
+{
+    *val = env->mttp;
+    return RISCV_EXCP_NONE;
+}
+
+static RISCVException write_mttp(CPURISCVState *env, int csrno,
+                                 target_ulong new_val)
+{
+    smmtt_mode_t mode = get_field(new_val, MTTP_MODE);
+
+#if defined(TARGET_RISCV64)
+    hwaddr ppn = get_field(new_val, MTTP_PPN);
+#endif
+
+    switch (mode) {
+        // If the mode is BARE, the remaining fields (SDID, MTTPPN) in mttp
+        // must be set to zeros, else generate a fault.
+        case SMMTT_BARE:
+            if ((mode & ~MTTP_MODE) != 0) {
+                return RISCV_EXCP_ILLEGAL_INST;
+            }
+            break;
+
+#if defined(TARGET_RISCV32)
+        // MTTL2 must be page-aligned, but this is always true since MTTP
+        // holds a PPN and not a physical address.
+        case SMMTT_34:
+            break;
+#elif defined(TARGET_RISCV64)
+        // MTTL2 must be 16M aligned
+        case SMMTT_46:
+            if ((ppn & 0b111111111111) != 0) {
+                return RISCV_EXCP_ILLEGAL_INST;
+            }
+            break;
+
+        // MTTL3 must be 8kb aligned
+        case SMMTT_56:
+            if ((ppn & 0b1) != 0) {
+                return RISCV_EXCP_ILLEGAL_INST;
+            }
+            break;
+#endif
+
+        default:
+            // A write to mttp with an unsupported MODE value is not ignored.
+            // Instead, the fields of mttp are WARL in the normal way.
+            new_val = set_field(new_val, MTTP_MODE,
+                                get_field(env->mttp, MTTP_MODE));
+            break;
+    }
+
+    // All good, write value
+    env->mttp = new_val;
+    return RISCV_EXCP_NONE;
 }
 
 static RISCVException rmw_mip64(CPURISCVState *env, int csrno,
@@ -5069,6 +5145,9 @@ riscv_csr_operations csr_ops[CSR_TABLE_SIZE] = {
     [CSR_SSTATEEN3] = { "sstateen3", sstateen, read_sstateen,
                         write_sstateen_1_3,
                         .min_priv_ver = PRIV_VERSION_1_12_0 },
+
+    /* Supervisor domain extensions */
+    [CSR_MTTP] = { "mttp", mttp, read_mttp, write_mttp, .min_priv_ver = PRIV_VERSION_1_12_0},
 
     /* Supervisor Trap Setup */
     [CSR_SSTATUS]    = { "sstatus",    smode, read_sstatus,    write_sstatus,

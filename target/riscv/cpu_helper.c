@@ -778,6 +778,67 @@ static int get_physical_address_pmp(CPURISCVState *env, int *prot, hwaddr addr,
 }
 
 /*
+ * get_physical_address_smmtt - check SMMTT permission for this physical address
+ *
+ * Similar to above, but using SMMTT as the underlying isolation primitive.
+ * Returns 0 if the permission checking was successful
+ *
+ * @env: CPURISCVState
+ * @prot: The returned protection attributes
+ * @addr: The physical address to be checked permission
+ * @access_type: The type of MMU access
+ * @mode: Indicates current privilege level.
+ */
+
+static int get_physical_address_smmtt(CPURISCVState *env, int *prot, hwaddr addr,
+                                      int size, MMUAccessType access_type,
+                                      int mode)
+{
+    int smmtt_priv;
+    bool smmtt_has_privs;
+
+    if (!riscv_cpu_cfg(env)->ext_smmtt) {
+          *prot = PAGE_READ | PAGE_WRITE | PAGE_EXEC;
+          return TRANSLATE_SUCCESS;
+    }
+
+    smmtt_has_privs = smmtt_hart_has_privs(env, addr, size, 1 << access_type,
+                                           &smmtt_priv, mode);
+    if(!smmtt_has_privs) {
+        *prot = 0;
+        return TRANSLATE_SMMTT_FAIL;
+    }
+
+    *prot = smmtt_priv;
+    return TRANSLATE_SUCCESS;
+}
+
+static int get_physical_address_permissions(CPURISCVState *env, int *prot,
+                                            hwaddr addr, int size,
+                                            MMUAccessType access_type, int mode)
+{
+    int pmp_ret, smmtt_ret;
+    int pmp_prot = 0, smmtt_prot = 0;
+
+    pmp_ret = get_physical_address_pmp(env, &pmp_prot, addr,
+                                       size, access_type, mode);
+    if (pmp_ret != TRANSLATE_SUCCESS) {
+            *prot = pmp_prot;
+            return pmp_ret;
+    }
+
+    smmtt_ret = get_physical_address_smmtt(env, &smmtt_prot, addr,
+                                           size, access_type, mode);
+    *prot = smmtt_prot & pmp_prot;
+
+    if (smmtt_ret != TRANSLATE_SUCCESS) {
+            return smmtt_ret;
+    }
+
+    return TRANSLATE_SUCCESS;
+}
+
+/*
  * get_physical_address - get the physical address for this virtual address
  *
  * Do a page table walk to obtain the physical address corresponding to a
@@ -963,11 +1024,11 @@ restart:
         }
 
         int pmp_prot;
-        int pmp_ret = get_physical_address_pmp(env, &pmp_prot, pte_addr,
-                                               sizeof(target_ulong),
-                                               MMU_DATA_LOAD, PRV_S);
+        int pmp_ret = get_physical_address_permissions(env, &pmp_prot, pte_addr,
+                                                       sizeof(target_ulong),
+                                                       MMU_DATA_LOAD, PRV_S);
         if (pmp_ret != TRANSLATE_SUCCESS) {
-            return TRANSLATE_PMP_FAIL;
+            return pmp_ret;
         }
 
         if (riscv_cpu_mxl(env) == MXL_RV32) {
@@ -1172,7 +1233,7 @@ restart:
 }
 
 static void raise_mmu_exception(CPURISCVState *env, target_ulong address,
-                                MMUAccessType access_type, bool pmp_violation,
+                                MMUAccessType access_type, bool isolation_violation,
                                 bool first_stage, bool two_stage,
                                 bool two_stage_indirect)
 {
@@ -1180,7 +1241,7 @@ static void raise_mmu_exception(CPURISCVState *env, target_ulong address,
 
     switch (access_type) {
     case MMU_INST_FETCH:
-        if (pmp_violation) {
+        if (isolation_violation) {
             cs->exception_index = RISCV_EXCP_INST_ACCESS_FAULT;
         } else if (env->virt_enabled && !first_stage) {
             cs->exception_index = RISCV_EXCP_INST_GUEST_PAGE_FAULT;
@@ -1189,7 +1250,7 @@ static void raise_mmu_exception(CPURISCVState *env, target_ulong address,
         }
         break;
     case MMU_DATA_LOAD:
-        if (pmp_violation) {
+        if (isolation_violation) {
             cs->exception_index = RISCV_EXCP_LOAD_ACCESS_FAULT;
         } else if (two_stage && !first_stage) {
             cs->exception_index = RISCV_EXCP_LOAD_GUEST_ACCESS_FAULT;
@@ -1198,7 +1259,7 @@ static void raise_mmu_exception(CPURISCVState *env, target_ulong address,
         }
         break;
     case MMU_DATA_STORE:
-        if (pmp_violation) {
+        if (isolation_violation) {
             cs->exception_index = RISCV_EXCP_STORE_AMO_ACCESS_FAULT;
         } else if (two_stage && !first_stage) {
             cs->exception_index = RISCV_EXCP_STORE_GUEST_AMO_ACCESS_FAULT;
@@ -1316,7 +1377,7 @@ bool riscv_cpu_tlb_fill(CPUState *cs, vaddr address, int size,
     vaddr im_address;
     hwaddr pa = 0;
     int prot, prot2, prot_pmp;
-    bool pmp_violation = false;
+    bool isolation_violation = false;
     bool first_stage_error = true;
     bool two_stage_lookup = mmuidx_2stage(mmu_idx);
     bool two_stage_indirect_error = false;
@@ -1369,8 +1430,8 @@ bool riscv_cpu_tlb_fill(CPUState *cs, vaddr address, int size,
             prot &= prot2;
 
             if (ret == TRANSLATE_SUCCESS) {
-                ret = get_physical_address_pmp(env, &prot_pmp, pa,
-                                               size, access_type, mode);
+                ret = get_physical_address_permissions(env, &prot_pmp, pa,
+                                                       size, access_type, mode);
                 tlb_size = pmp_get_tlb_size(env, pa);
 
                 qemu_log_mask(CPU_LOG_MMU,
@@ -1403,8 +1464,8 @@ bool riscv_cpu_tlb_fill(CPUState *cs, vaddr address, int size,
                       __func__, address, ret, pa, prot);
 
         if (ret == TRANSLATE_SUCCESS) {
-            ret = get_physical_address_pmp(env, &prot_pmp, pa,
-                                           size, access_type, mode);
+            ret = get_physical_address_permissions(env, &prot_pmp, pa,
+                                                   size, access_type, mode);
             tlb_size = pmp_get_tlb_size(env, pa);
 
             qemu_log_mask(CPU_LOG_MMU,
@@ -1416,8 +1477,8 @@ bool riscv_cpu_tlb_fill(CPUState *cs, vaddr address, int size,
         }
     }
 
-    if (ret == TRANSLATE_PMP_FAIL) {
-        pmp_violation = true;
+    if (ret == TRANSLATE_PMP_FAIL || ret == TRANSLATE_SMMTT_FAIL) {
+      isolation_violation = true;
     }
 
     if (ret == TRANSLATE_SUCCESS) {
@@ -1427,7 +1488,7 @@ bool riscv_cpu_tlb_fill(CPUState *cs, vaddr address, int size,
     } else if (probe) {
         return false;
     } else {
-        raise_mmu_exception(env, address, access_type, pmp_violation,
+        raise_mmu_exception(env, address, access_type, isolation_violation,
                             first_stage_error, two_stage_lookup,
                             two_stage_indirect_error);
         cpu_loop_exit_restore(cs, retaddr);

@@ -18,6 +18,7 @@ struct OpenSBIMemregionState {
     /* private */
     uint64_t base;
     uint32_t order;
+    uint64_t size;
     bool mmio;
     char *devices[OPENSBI_MEMREGION_DEVICES_MAX];
 };
